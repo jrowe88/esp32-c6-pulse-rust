@@ -33,11 +33,21 @@ jobs:
         uses: actions/checkout@v4
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup toolchain install
+      # The remaining setup is only needed to compile; `cargo fmt` just reads the sources.
       - name: Enable caching
+        if: matrix.action.command != 'fmt'
         uses: Swatinem/rust-cache@v2
+      - name: Cache ESP-IDF and its tools
+        if: matrix.action.command != 'fmt'
+        uses: actions/cache@v4
+        with:
+          path: ~/.espressif
+          key: espressif-${{ runner.os }}-${{ hashFiles('.cargo/config.toml') }}
       - name: Install ldproxy
-        run: cargo install ldproxy
+        if: matrix.action.command != 'fmt'
+        run: cargo install ldproxy --locked
       - name: Use placeholder Wi-Fi credentials
+        if: matrix.action.command != 'fmt'
         run: cp src/wifi_credentials.example.rs src/wifi_credentials.rs
       - name: Run command
         run: cargo ${{ matrix.action.command }} ${{ matrix.action.args }}

@@ -24,7 +24,7 @@ use esp_idf_svc::nvs::EspDefaultNvsPartition;
 use status_led::{LedStatus, StatusLed};
 use wifi_credentials::{WIFI_PASSWORD, WIFI_SSID};
 
-/// How often to check that Wi-Fi is still connected.
+/// How often to check that Wi-Fi is still connected and has an IP address.
 const CONNECTION_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 /// How long to wait after a failed attempt before trying again.
 const RETRY_DELAY: Duration = Duration::from_secs(10);
@@ -51,9 +51,16 @@ fn main() -> anyhow::Result<()> {
         WIFI_PASSWORD,
     )?;
 
-    // Supervisor loop. It also keeps `wifi` alive: returning from main would drop it.
+    // Supervisor loop. It never returns, which also keeps `wifi` alive: returning from main
+    // would drop it and shut Wi-Fi down.
     loop {
-        if !wifi.is_connected()? {
+        // "Up" means joined to the network *and* holding an IP address.
+        let is_up = wifi.is_up().unwrap_or_else(|e| {
+            log::warn!("Couldn't read Wi-Fi status: {e}");
+            false
+        });
+
+        if !is_up {
             led.set_status(LedStatus::Connecting);
             log::info!("Connecting to Wi-Fi network '{WIFI_SSID}'...");
 

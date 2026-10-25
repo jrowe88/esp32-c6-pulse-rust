@@ -1,6 +1,6 @@
 # ESP-IDF configuration overrides. Changing this file triggers a full ESP-IDF rebuild.
 
-# Rust often needs a bit more main task stack than C (the default is 3 KB).
+# Rust often needs a bit more main task stack than C (the default is 3.5 KB).
 # Increase this further if you allocate large variables on the main task's stack.
 CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
 

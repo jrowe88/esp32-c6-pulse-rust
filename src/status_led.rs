@@ -30,7 +30,9 @@ const MIN_BRIGHTNESS: f32 = 0.05;
 /// so values below 10 ms still sleep for 10 ms.
 const FRAME_INTERVAL: Duration = Duration::from_millis(10);
 
-/// Stack size for the LED thread. The animation needs very little.
+/// Stack size for the LED thread, set explicitly so it doesn't depend on
+/// `CONFIG_PTHREAD_TASK_STACK_SIZE_DEFAULT`. The animation itself needs very little;
+/// most of this is headroom for log formatting.
 const TASK_STACK_SIZE: usize = 4096;
 
 /// What the LED is currently showing.
@@ -83,7 +85,7 @@ impl StatusLed {
             .stack_size(TASK_STACK_SIZE)
             .spawn(move || {
                 if let Err(e) = animate(pin, &thread_status) {
-                    log::error!("Status LED stopped: {e:?}");
+                    log::error!("Status LED could not start: {e:?}");
                 }
             })?;
 
@@ -96,17 +98,29 @@ impl StatusLed {
 }
 
 /// Body of the LED thread: renders the current status's pattern forever.
+///
+/// Only returns if the LED can't be set up. Errors while sending a frame are logged and
+/// the animation carries on, so one glitch doesn't freeze the status display.
 fn animate(pin: impl OutputPin, status: &AtomicU8) -> anyhow::Result<()> {
     let mut led = Ws2812::new(pin)?;
 
     // Position within the current breathe cycle, `0.0..1.0`.
     let mut phase = 0.0_f32;
     let mut last_frame = Instant::now();
+    // Logs only the first error of a run of failures, instead of 100 per second.
+    let mut send_failing = false;
 
     loop {
         let (color, period) = LedStatus::from_u8(status.load(Ordering::Relaxed)).pattern();
 
-        led.set_color(color.scaled(brightness_at(phase)))?;
+        match led.set_color(color.scaled(brightness_at(phase))) {
+            Ok(()) => send_failing = false,
+            Err(e) if !send_failing => {
+                log::warn!("Status LED update failed: {e}");
+                send_failing = true;
+            }
+            Err(_) => {}
+        }
         FreeRtos::delay_ms(FRAME_INTERVAL.as_millis() as u32);
 
         // Advance by the real elapsed time rather than FRAME_INTERVAL: the delay rounds up
