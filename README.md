@@ -142,7 +142,7 @@ cargo install ldproxy espflash
 ### 4. Get the code and add your Wi-Fi details
 
 ```sh
-git clone <this repository's URL>
+git clone https://github.com/jrowe88/esp32-c6-pulse-rust.git
 cd esp32-c6-pulse-rust
 ```
 
