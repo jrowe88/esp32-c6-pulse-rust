@@ -1,0 +1,6 @@
+[toolchain]
+# The ESP32-C6 target (riscv32imac-esp-espidf) needs nightly to rebuild `std` from source.
+# Pinned because nightly-2026-10-24 and later break `std` for ESP-IDF (libc 0.2.191 renamed
+# the `stat` time fields). Try plain "nightly" again once that is fixed upstream.
+channel = "nightly-2026-10-01"
+components = ["rust-src", "rustfmt", "clippy"]

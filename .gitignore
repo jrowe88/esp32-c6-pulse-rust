@@ -1,0 +1,6 @@
+/.vscode
+/.embuild
+/target
+
+# Local Wi-Fi credentials (see src/wifi_credentials.example.rs)
+/src/wifi_credentials.rs

@@ -1,0 +1,43 @@
+name: Continuous Integration
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "**/README.md"
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # .cargo/config.toml sets a Windows-specific target dir; use the standard one here.
+  CARGO_TARGET_DIR: target
+
+jobs:
+  rust-checks:
+    name: Rust Checks
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        action:
+          - command: build
+            args: --release
+          - command: fmt
+            args: --all -- --check --color always
+          - command: clippy
+            args: --all-targets --all-features --workspace -- -D warnings
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      - name: Install Rust toolchain from rust-toolchain.toml
+        run: rustup toolchain install
+      - name: Enable caching
+        uses: Swatinem/rust-cache@v2
+      - name: Install ldproxy
+        run: cargo install ldproxy
+      - name: Use placeholder Wi-Fi credentials
+        run: cp src/wifi_credentials.example.rs src/wifi_credentials.rs
+      - name: Run command
+        run: cargo ${{ matrix.action.command }} ${{ matrix.action.args }}
