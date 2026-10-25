@@ -27,7 +27,9 @@ and CI.
 > | Telltale signs in code | `fn main()`, `esp_idf_svc::...` | `#![no_std]`, `#![no_main]`, `esp_hal::...`, `#[esp_hal::main]` |
 >
 > If you're following a tutorial or adding a crate, check which of the two it targets.
-> Both are maintained by the [esp-rs](https://github.com/esp-rs) community.
+> Both live under the [esp-rs](https://github.com/esp-rs) GitHub organization, but only the
+> bare-metal `esp-hal` stack is officially supported by Espressif. The `std` crates used
+> here are community-maintained.
 
 ## Why Rust instead of C or C++?
 
@@ -275,8 +277,12 @@ cargo clippy                 # Lint the code
 
 ## Learn more
 
-- [The Rust on ESP Book](https://docs.esp-rs.org/book/): the official esp-rs guide, covering
-  both the `std` and bare-metal approaches
+- [Embedded Rust on Espressif](https://esp-rs.github.io/std-training/): a hands-on training
+  course using the same `std` / ESP-IDF stack as this project (written for the ESP32-C3,
+  but almost all of it applies to the C6)
+- [The Rust on ESP Book](https://docs.espressif.com/projects/rust/book/): Espressif's
+  official guide. It now covers only **bare-metal** (`esp-hal`) development, so it's useful
+  background, but its code won't drop into this project.
 - [esp-rs/esp-idf](https://github.com/esp-rs/esp-idf): source and examples for
   `esp-idf-svc`, `esp-idf-hal`, and `esp-idf-sys`
 - [esp-idf-template](https://github.com/esp-rs/esp-idf-template): the `cargo generate`
