@@ -11,6 +11,9 @@ The firmware connects to Wi-Fi while the board's onboard RGB LED shows what's ha
 | Slow green "breathing" | Connected |
 | Fast red pulse | Connection failed (it retries automatically) |
 
+The LED is driven with [ledkit](https://github.com/jrowe88/ledkit), a Rust crate family
+for NeoPixel and DotStar LEDs.
+
 It's meant as a starting point: small enough to read in one sitting, but structured like a
 real project, with a hardware driver, a background task, Wi-Fi with automatic reconnection,
 and CI.
@@ -67,7 +70,7 @@ Most concepts map directly:
 | `delay(ms)` | `std::thread::sleep(Duration::from_millis(ms))` |
 | `Serial.println(...)` | `log::info!(...)` |
 | `WiFi.begin(ssid, pass)` | `wifi::start(...)` and `wifi::connect(...)` in `src/wifi.rs` |
-| Adafruit NeoPixel library | `src/ws2812.rs` |
+| Adafruit NeoPixel library | [ledkit](https://github.com/jrowe88/ledkit) (`ledkit-core` in `Cargo.toml`) |
 | Library Manager | Add a crate to `[dependencies]` in `Cargo.toml` |
 | "Upload" button | `cargo run` (build, flash, then open the serial monitor) |
 | Serial Monitor | Opens automatically after `cargo run`, or run `espflash monitor` |
@@ -144,9 +147,14 @@ cargo install ldproxy espflash
 ### 4. Get the code and add your Wi-Fi details
 
 ```sh
+git clone https://github.com/jrowe88/ledkit.git
 git clone https://github.com/jrowe88/esp32-c6-pulse-rust.git
 cd esp32-c6-pulse-rust
 ```
+
+> [!NOTE]
+> ledkit isn't on crates.io yet, so this project uses it from a `ledkit` folder next to
+> this one. Clone both into the same parent folder, as above.
 
 Copy the credentials template and enter your network name and password:
 
@@ -206,7 +214,7 @@ from your PC: the network stack answers automatically.
 └── src
     ├── main.rs                   # Startup and the Wi-Fi supervisor loop
     ├── status_led.rs             # Breathing LED animation, running in its own thread
-    ├── ws2812.rs                 # Minimal WS2812 RGB LED driver using the RMT peripheral
+    ├── rmt_output.rs             # Sends ledkit frames to the LED with the RMT peripheral
     ├── wifi.rs                   # Wi-Fi station setup and connection
     └── wifi_credentials.example.rs
 ```
@@ -220,11 +228,13 @@ from your PC: the network stack answers automatically.
 - **Talking to the LED.** The onboard LED is a WS2812 "smart" LED. Instead of PWM, it reads
   a single-wire serial signal where each bit is a high pulse followed by a low pulse, timed
   to within about 150 ns. The ESP32's **RMT** peripheral generates those pulses in hardware,
-  so Wi-Fi activity can't disturb the timing. See `src/ws2812.rs`.
-- **The breathing effect.** Brightness follows a raised-cosine curve with simple gamma
-  correction, so the fade looks smooth to the eye. The animation advances by the actual
-  elapsed time, so its speed doesn't depend on the frame rate. See `brightness_at()` in
-  `src/status_led.rs`.
+  so Wi-Fi activity can't disturb the timing. ledkit knows each chip's pulse lengths and
+  byte order; `src/rmt_output.rs` is the small bridge that hands ledkit's frames to the RMT.
+- **The breathing effect.** The LED is a one-pixel ledkit `Strip`. Brightness follows a
+  raised-cosine curve, and ledkit's brightness is perceptual (`0.5` looks half as bright),
+  so the fade looks smooth to the eye. ledkit also dithers, which smooths the dim end. The
+  animation advances by the actual elapsed time, so its speed doesn't depend on the frame
+  rate. See `breathe_brightness()` in `src/status_led.rs`.
 
 ## Customizing
 
@@ -235,21 +245,17 @@ Most knobs are constants at the top of their files:
 | Colors and pulse speeds for each status | `LedStatus::pattern()` in `src/status_led.rs` |
 | Peak and minimum brightness | `MAX_BRIGHTNESS`, `MIN_BRIGHTNESS` in `src/status_led.rs` |
 | LED pin | `peripherals.pins.gpio8` in `src/main.rs` |
+| LED type and count (for an external strip) | `LedType`, `LED_COUNT` in `src/status_led.rs` |
 | Reconnect timing | `CONNECTION_CHECK_INTERVAL`, `RETRY_DELAY` in `src/main.rs` |
 | WPA3-only networks | Change `AuthMethod::WPA2Personal` to `WPA3Personal` in `src/wifi.rs` |
 
-### Using a library for the LED instead
+### More LEDs, other LED types
 
-`src/ws2812.rs` is written out by hand so you can see how the protocol works. For real
-projects, especially LED strips, consider an existing crate:
-
-- [`ws2812-esp32-rmt-driver`](https://crates.io/crates/ws2812-esp32-rmt-driver): an
-  RMT-based driver for `std`/ESP-IDF projects like this one. It supports multi-LED strips,
-  RGBW LEDs, and the [`smart-leds`](https://crates.io/crates/smart-leds) ecosystem of
-  effects and color utilities.
-- SK6812 LEDs use nearly the same protocol as the WS2812, and the RGB versions usually work
-  unchanged. RGBW SK6812s send a fourth (white) byte per LED, which the crate above
-  supports.
+[ledkit](https://github.com/jrowe88/ledkit) handles strips as well as single LEDs. To drive an
+external strip, wire its data line to a free GPIO, then set `LED_COUNT` and `LedType` in
+`src/status_led.rs` (for example `Sk6812Rgbw` for RGBW strips) and change the pin in
+`src/main.rs`. The ledkit docs list every supported chip and explain brightness, color
+gamma and power limits.
 
 ## Troubleshooting
 
@@ -261,6 +267,7 @@ projects, especially LED strips, consider an existing crate:
 | Errors inside `std`, such as `no field st_ctime` | A newer nightly broke `std` for ESP-IDF. Keep the nightly pinned in `rust-toolchain.toml`. |
 | `Blocking waiting for file lock on build directory` | Another build is running, often rust-analyzer in your editor. It continues when that finishes. |
 | `espflash` can't find or connect to the board | Use a data cable and the **UART** port. On Windows, check Device Manager for a missing USB-serial driver (CP210x or CH343). As a last resort, hold **BOOT**, tap **RESET**, release **BOOT**, and try again. |
+| Error mentioning `ledkit` or `../ledkit` | Clone ledkit next to this project (step 4). |
 | LED pulses red | Check the credentials, that the network is 2.4 GHz, and whether it's WPA3-only (see Customizing). The serial log shows the exact error. |
 
 ## Useful commands

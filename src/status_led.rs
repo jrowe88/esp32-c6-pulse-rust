@@ -12,16 +12,26 @@ use std::time::{Duration, Instant};
 
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::gpio::OutputPin;
+use ledkit_core::color::Hue;
+use ledkit_core::{Rgb, Strip, Ws2812b};
 
-use crate::ws2812::{Rgb, Ws2812};
+use crate::rmt_output::RmtOutput;
+
+/// The type of LED on the board. The DevKits' onboard LED is a WS2812B-style NeoPixel.
+type LedType = Ws2812b;
+
+/// How many LEDs are chained on the pin: the DevKit has one onboard.
+const LED_COUNT: usize = 1;
 
 /// Peak brightness, `0.0..=1.0`. The LED is very bright at full power.
+///
+/// ledkit's brightness is perceptual: `0.5` looks about half as bright as `1.0`.
 const MAX_BRIGHTNESS: f32 = 0.75;
 
 /// Bottom of the fade, as a fraction of [`MAX_BRIGHTNESS`].
 ///
-/// Fading all the way to zero looks steppy at the dim end, because the lowest 8-bit
-/// levels are large relative jumps (1 -> 2 doubles the brightness).
+/// Keeps the LED from switching fully off at the bottom of each breath, so the fade
+/// looks continuous.
 const MIN_BRIGHTNESS: f32 = 0.05;
 
 /// Time between LED updates.
@@ -45,6 +55,32 @@ pub enum LedStatus {
     Connected = 1,
     /// Fast red pulse.
     Failed = 2,
+    /// Steady brightness, cycling through the color wheel. Handy for testing the LED.
+    Rainbow = 3,
+}
+
+/// How a status is drawn.
+enum Pattern {
+    /// Fades `color` in and out once per `period`.
+    Breathe { color: Rgb, period: Duration },
+    /// Steps through every hue once per `period`, at constant brightness.
+    Rainbow { period: Duration },
+}
+
+impl Pattern {
+    const fn period(&self) -> Duration {
+        match self {
+            Self::Breathe { period, .. } | Self::Rainbow { period } => *period,
+        }
+    }
+
+    /// The color and brightness to show at `phase` (`0.0..1.0`) through the pattern's cycle.
+    fn frame_at(&self, phase: f32) -> (Rgb, f32) {
+        match self {
+            Self::Breathe { color, .. } => (*color, breathe_brightness(phase)),
+            Self::Rainbow { .. } => (Rgb::from_hue(Hue::from_fraction(phase)), MAX_BRIGHTNESS),
+        }
+    }
 }
 
 impl LedStatus {
@@ -52,16 +88,28 @@ impl LedStatus {
         match value {
             1 => Self::Connected,
             2 => Self::Failed,
+            3 => Self::Rainbow,
             _ => Self::Connecting,
         }
     }
 
-    /// Base color and the length of one full breathe in/out cycle.
-    const fn pattern(self) -> (Rgb, Duration) {
+    const fn pattern(self) -> Pattern {
         match self {
-            Self::Connecting => (Rgb::new(0, 80, 255), Duration::from_millis(1000)),
-            Self::Connected => (Rgb::new(40, 255, 0), Duration::from_millis(3000)),
-            Self::Failed => (Rgb::new(255, 0, 0), Duration::from_millis(500)),
+            Self::Connecting => Pattern::Breathe {
+                color: Rgb::new(0, 80, 255),
+                period: Duration::from_millis(1000),
+            },
+            Self::Connected => Pattern::Breathe {
+                color: Rgb::new(40, 255, 0),
+                period: Duration::from_millis(3000),
+            },
+            Self::Failed => Pattern::Breathe {
+                color: Rgb::new(255, 0, 0),
+                period: Duration::from_millis(500),
+            },
+            Self::Rainbow => Pattern::Rainbow {
+                period: Duration::from_millis(6000),
+            },
         }
     }
 }
@@ -72,7 +120,7 @@ pub struct StatusLed {
 }
 
 impl StatusLed {
-    /// Spawns the animation thread, driving a WS2812 LED on `pin`.
+    /// Spawns the animation thread, driving the LED on `pin`.
     ///
     /// The thread owns the LED for the rest of the program; the returned handle is
     /// only used to change what it shows.
@@ -102,18 +150,24 @@ impl StatusLed {
 /// Only returns if the LED can't be set up. Errors while sending a frame are logged and
 /// the animation carries on, so one glitch doesn't freeze the status display.
 fn animate(pin: impl OutputPin, status: &AtomicU8) -> anyhow::Result<()> {
-    let mut led = Ws2812::new(pin)?;
+    // The strip holds the pixel colors; `show()` applies brightness (with dithering, which
+    // smooths the dim end of the fade) and sends the frame through the RMT.
+    let mut strip = Strip::<LedType, LED_COUNT, _>::new(RmtOutput::new(pin)?);
 
-    // Position within the current breathe cycle, `0.0..1.0`.
+    // Position within the current pattern's cycle, `0.0..1.0`.
     let mut phase = 0.0_f32;
     let mut last_frame = Instant::now();
     // Logs only the first error of a run of failures, instead of 100 per second.
     let mut send_failing = false;
 
     loop {
-        let (color, period) = LedStatus::from_u8(status.load(Ordering::Relaxed)).pattern();
+        let pattern = LedStatus::from_u8(status.load(Ordering::Relaxed)).pattern();
 
-        match led.set_color(color.scaled(brightness_at(phase))) {
+        let (color, brightness) = pattern.frame_at(phase);
+        strip.fill(color);
+        strip.set_brightness(brightness);
+
+        match strip.show() {
             Ok(()) => send_failing = false,
             Err(e) if !send_failing => {
                 log::warn!("Status LED update failed: {e}");
@@ -127,18 +181,17 @@ fn animate(pin: impl OutputPin, status: &AtomicU8) -> anyhow::Result<()> {
         // to whole RTOS ticks, and sending takes time too. This keeps the animation speed
         // independent of the frame rate.
         let now = Instant::now();
-        phase = (phase + (now - last_frame).as_secs_f32() / period.as_secs_f32()).fract();
+        let elapsed = (now - last_frame).as_secs_f32();
+        phase = (phase + elapsed / pattern.period().as_secs_f32()).fract();
         last_frame = now;
     }
 }
 
 /// Brightness for a point in the breathe cycle (`phase` in `0.0..1.0`).
-fn brightness_at(phase: f32) -> f32 {
+fn breathe_brightness(phase: f32) -> f32 {
     // Raised cosine: a smooth 0 -> 1 -> 0 curve with gentle ease-in and ease-out.
+    // No gamma correction needed here: ledkit's brightness is already perceptual.
     let level = (1.0 - (2.0 * PI * phase).cos()) / 2.0;
-    // Squaring is a cheap gamma correction: the eye is more sensitive to changes at low
-    // brightness, so this makes the fade look even.
-    let perceived = level * level;
 
-    (MIN_BRIGHTNESS + (1.0 - MIN_BRIGHTNESS) * perceived) * MAX_BRIGHTNESS
+    (MIN_BRIGHTNESS + (1.0 - MIN_BRIGHTNESS) * level) * MAX_BRIGHTNESS
 }

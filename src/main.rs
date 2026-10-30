@@ -9,10 +9,10 @@
 //! The LED animation runs in its own thread (see [`status_led`]); the main thread
 //! connects to Wi-Fi and then supervises the connection, reconnecting if it drops.
 
+mod rmt_output;
 mod status_led;
 mod wifi;
 mod wifi_credentials;
-mod ws2812;
 
 use std::thread;
 use std::time::Duration;
@@ -28,6 +28,8 @@ use wifi_credentials::{WIFI_PASSWORD, WIFI_SSID};
 const CONNECTION_CHECK_INTERVAL: Duration = Duration::from_secs(5);
 /// How long to wait after a failed attempt before trying again.
 const RETRY_DELAY: Duration = Duration::from_secs(10);
+/// Testing aid: show the rainbow instead of the green breathe once connected.
+const RAINBOW_WHEN_CONNECTED: bool = true;
 
 fn main() -> anyhow::Result<()> {
     // Applies runtime patches from esp-idf-sys. Must be called once, before anything else.
@@ -67,7 +69,11 @@ fn main() -> anyhow::Result<()> {
             match wifi::connect(&mut wifi) {
                 Ok(ip) => {
                     log::info!("Wi-Fi connected, IP address {ip}");
-                    led.set_status(LedStatus::Connected);
+                    led.set_status(if RAINBOW_WHEN_CONNECTED {
+                        LedStatus::Rainbow
+                    } else {
+                        LedStatus::Connected
+                    });
                 }
                 Err(e) => {
                     log::warn!("Wi-Fi connection failed: {e:?}. Retrying in {RETRY_DELAY:?}");

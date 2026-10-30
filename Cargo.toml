@@ -26,6 +26,7 @@ opt-level = "z"
 [dependencies]
 anyhow = "1"
 esp-idf-svc = { version = "0.53", features = ["critical-section"] }
+ledkit-core = { path = "../ledkit/crates/ledkit-core" }
 log = "0.4"
 
 [build-dependencies]
