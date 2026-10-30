@@ -70,7 +70,7 @@ Most concepts map directly:
 | `delay(ms)` | `std::thread::sleep(Duration::from_millis(ms))` |
 | `Serial.println(...)` | `log::info!(...)` |
 | `WiFi.begin(ssid, pass)` | `wifi::start(...)` and `wifi::connect(...)` in `src/wifi.rs` |
-| Adafruit NeoPixel library | [ledkit](https://github.com/jrowe88/ledkit) (`ledkit-core` in `Cargo.toml`) |
+| Adafruit NeoPixel library | [ledkit](https://github.com/jrowe88/ledkit) (`ledkit-core` and `ledkit-esp-idf` in `Cargo.toml`) |
 | Library Manager | Add a crate to `[dependencies]` in `Cargo.toml` |
 | "Upload" button | `cargo run` (build, flash, then open the serial monitor) |
 | Serial Monitor | Opens automatically after `cargo run`, or run `espflash monitor` |
@@ -214,7 +214,6 @@ from your PC: the network stack answers automatically.
 └── src
     ├── main.rs                   # Startup and the Wi-Fi supervisor loop
     ├── status_led.rs             # Breathing LED animation, running in its own thread
-    ├── rmt_output.rs             # Sends ledkit frames to the LED with the RMT peripheral
     ├── wifi.rs                   # Wi-Fi station setup and connection
     └── wifi_credentials.example.rs
 ```
@@ -229,7 +228,7 @@ from your PC: the network stack answers automatically.
   a single-wire serial signal where each bit is a high pulse followed by a low pulse, timed
   to within about 150 ns. The ESP32's **RMT** peripheral generates those pulses in hardware,
   so Wi-Fi activity can't disturb the timing. ledkit knows each chip's pulse lengths and
-  byte order; `src/rmt_output.rs` is the small bridge that hands ledkit's frames to the RMT.
+  byte order, and its `ledkit-esp-idf` crate sends each frame through the RMT.
 - **The breathing effect.** The LED is a one-pixel ledkit `Strip`. Brightness follows a
   raised-cosine curve, and ledkit's brightness is perceptual (`0.5` looks half as bright),
   so the fade looks smooth to the eye. ledkit also dithers, which smooths the dim end. The

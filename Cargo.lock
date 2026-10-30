@@ -599,6 +599,7 @@ dependencies = [
  "embuild",
  "esp-idf-svc",
  "ledkit-core",
+ "ledkit-esp-idf",
  "log",
 ]
 
@@ -876,6 +877,14 @@ name = "ledkit-core"
 version = "0.1.0"
 dependencies = [
  "ledkit-color",
+]
+
+[[package]]
+name = "ledkit-esp-idf"
+version = "0.1.0"
+dependencies = [
+ "esp-idf-hal",
+ "ledkit-core",
 ]
 
 [[package]]

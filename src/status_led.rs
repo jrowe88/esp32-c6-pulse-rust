@@ -14,7 +14,7 @@ use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::gpio::OutputPin;
 use ledkit_core::prelude::*;
 
-use crate::rmt_output::RmtOutput;
+use ledkit_esp_idf::RmtOutput;
 
 /// The type of LED on the board. The DevKits' onboard LED is a WS2812B-style NeoPixel.
 type LedType = Ws2812b;
@@ -30,8 +30,9 @@ const MAX_BRIGHTNESS: f32 = 0.75;
 /// Bottom of the fade, as a fraction of [`MAX_BRIGHTNESS`].
 ///
 /// Keeps the LED from switching fully off at the bottom of each breath, so the fade
-/// looks continuous.
-const MIN_BRIGHTNESS: f32 = 0.05;
+/// looks continuous. Because brightness is perceptual, low values fall off fast: below
+/// about 4% the LED receives level 0 and goes dark. 0.3 of 0.75 lands at about level 9.
+const MIN_BRIGHTNESS: f32 = 0.3;
 
 /// Time between LED updates.
 ///
