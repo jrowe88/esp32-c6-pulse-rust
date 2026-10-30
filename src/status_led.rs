@@ -12,8 +12,7 @@ use std::time::{Duration, Instant};
 
 use esp_idf_svc::hal::delay::FreeRtos;
 use esp_idf_svc::hal::gpio::OutputPin;
-use ledkit_core::color::Hue;
-use ledkit_core::{Rgb, Strip, Ws2812b};
+use ledkit_core::prelude::*;
 
 use crate::rmt_output::RmtOutput;
 
